@@ -1,5 +1,5 @@
 from django.db import models
-from datetime import date
+from datetime import datetime
 # Create your models here.
 class Articulo(models.Model):
     Id = models.AutoField(primary_key=True)
@@ -8,30 +8,23 @@ class Articulo(models.Model):
     Descripcion = models.CharField(max_length=300)
     PrecioSinImpuestos = models.FloatField()
     ImpuestoAplicable = models.FloatField()
-    FechaCreacion = models.DateField(default=date.today())
-
-    def __str__(self):
-        return self.Nombre
+    FechaCreacion = models.DateField(default=datetime.now())
 
 class Pedido(models.Model):
-    articulos = models.ManyToManyField(Articulo, through='ArticuloPedido') # Relacion muchos a muchos
-
+    articulos = models.ManyToManyField(Articulo, through = 'PedidoArticulo') # Relacion muchos a muchos
     Id = models.AutoField(primary_key=True)
-    PrecioTotalSinImpuestos = models.FloatField()
-    PrecioTotalConImpuestos = models.FloatField()
-    FechaCreacion = models.DateField(default=date.today())
+    PrecioTotalSinImpuestos = models.FloatField(blank= True)
+    PrecioTotalConImpuestos = models.FloatField(blank= True)
+    FechaCreacion = models.DateField(blank= True)
 
-    def __str__(self):
-        return self.Id
 
-class ArticuloPedido(models.Model):
-    articulo = models.ForeignKey(Articulo, on_delete=models.CASCADE)
-    pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE)
-    cantidad = models.IntegerField()
-    referencia = models.CharField(max_length = 500, default = 'Sin referencia')
+class PedidoArticulo(models.Model):
+    Id = models.AutoField(primary_key=True)
+    articulo = models.ForeignKey("Articulo", on_delete= models.CASCADE)
+    pedido = models.ForeignKey("Pedido", on_delete = models.CASCADE)
+    cantidad = models.IntegerField(default = 1)
 
-    def __str__(self):
-        return "{}_{}".format(self.pedido.__str__(), self.articulo.__str__())
+
 
 
 

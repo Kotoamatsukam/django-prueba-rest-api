@@ -1,62 +1,86 @@
-from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt # para que otros dominios puedan acceder a los metodos
-from rest_framework.parsers import JSONParser# Para parsear la data que viene en modelos
-from django.http.response import JsonResponse
-
-from ApiTestApp.models import Articulo, Pedido, ArticuloPedido
+from ApiTestApp.models import Articulo, Pedido, PedidoArticulo
 from ApiTestApp.serializers import ArticuloSerializer, PedidoSerializer
+from rest_framework.decorators import api_view,permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+from collections import namedtuple
+from django.db import connection
+@api_view(['GET','POST', 'PUT', 'DELETE'])
+def articuloApi(request, pkArticulo = 0):
+    if request.method == 'GET': # Para obtener todos los articulos
+        if pkArticulo == 0:
+            articulos = Articulo.objects.all()
 
-
-# Create your views here.
-@csrf_exempt
-def articuloApi(request, id = 0):
-    if request.method == 'GET':
-        articulos = Articulo.objects.all()
+        else:
+            articulos = Articulo.objects.filter(Id = pkArticulo)
         articulos_serializer = ArticuloSerializer(articulos, many = True)
-        return JsonResponse(articulos_serializer.data, safe = False)
+        return Response(articulos_serializer.data, status = status.HTTP_200_OK)
+
     elif request.method == 'POST':
-        articulo_data = JSONParser().parse(request)
-        articulos_serializer = ArticuloSerializer(data = articulo_data)
+        request.POST._mutable = True
+        articulos_serializer = ArticuloSerializer(data = request.data)
         if articulos_serializer.is_valid():# si el modelo enviado es el correcto, guardamos en la base de datoss
             articulos_serializer.save()
-            return JsonResponse("Articulo agregado correctamente", safe = False)
-        return JsonResponse("Error al agregar el articulo", safe = False)
+            return Response("Articulo agregado correctamente", status=status.HTTP_200_OK)
+        return Response("Error al agregar articulo", status=status.HTTP_400_BAD_REQUEST)
+
     elif request.method == 'PUT':
-        articulo_data = JSONParser().parse(request)
-        articulo = Articulo.objects.get(Id = articulo_data['Id'])# capturamos el registro actual por el id
-        articulo_serializer = ArticuloSerializer(articulo, data = articulo_data)
+        articulo = Articulo.objects.get(Id = request.data['Id'])
+        request.POST._mutable = True
+        articulo_serializer = ArticuloSerializer(articulo, data = request.data)
         if articulo_serializer.is_valid():
             articulo_serializer.save()
-            return JsonResponse("Articulo actualizado correctamente", safe = False)
-        return JsonResponse("Failed to Update")
-    elif request.method == "DELETE":
-        articulo = Articulo.objects.get(Id = id)
-        articulo.delete()
-        return JsonResponse("Articulo eliminado correctamente", safe = False)
+            return Response("Articulo actualizado correctamente", status=status.HTTP_200_OK)
+        return Response("Error al actualizar el pedido", status=status.HTTP_400_BAD_REQUEST)
 
-@csrf_exempt
-def pedidoApi(request, id = 0):
+    elif request.method == "DELETE":
+        articulo = Articulo.objects.filter(Id = pkArticulo)
+        articulo.delete()
+        return  Response("Articulo eliminado con exito")
+
+@api_view(['GET','POST', 'PUT'])
+def pedidoApi(request, pkPedido = 0):
+
     if request.method == 'GET':
-        pedidos = Pedido.objects.all()
+        c = connection.cursor()
+        if pkPedido == 0:
+            pedidos = Pedido.objects.all()
+        else:
+            pedidos = Pedido.objects.filter(Id = pkPedido)
         pedidos_serializer = PedidoSerializer(pedidos, many = True)
-        return JsonResponse(pedidos_serializer.data, safe = False)
+        for dict in pedidos_serializer.data:
+            pedido_id = dict['Id']
+            c = connection.cursor()
+            c.execute('SELECT articulo_id FROM apitestdb.apitestapp_pedidoarticulo WHERE pedido_id = %s', pedido_id)
+            nombres_articulos = []
+            for row in c:
+                art_obj = Articulo.objects.get(Id=row[0])
+                if PedidoArticulo.objects.filter(articulo = art_obj, pedido = pedido_id).exists():
+                    pedido_articulo = PedidoArticulo.objects.get(articulo=art_obj.Id, pedido = pedido_id)
+                    tuple = (f'Nombre: {art_obj.Referencia}', f'Cantidad: {pedido_articulo.cantidad}')
+                    nombres_articulos.append(tuple)
+
+            dict['articulos'] = nombres_articulos# Agregamos este componente en el json de salida
+
+        return Response(pedidos_serializer.data, status = status.HTTP_200_OK)
 
     elif request.method == 'POST':
-        pedido_data = JSONParser().parse(request)
-        pedido_serializer = PedidoSerializer(data = pedido_data)
-        if pedido_serializer.is_valid():# si el modelo enviado es el correcto, guardamos en la base de datoss
+        request.POST._mutable = True
+        pedido_serializer = PedidoSerializer(data=request.data)
+        if pedido_serializer.is_valid():  # si el modelo enviado es el correcto, guardamos en la base de datos
             pedido_serializer.save()
-            return JsonResponse("Pedido agregado correctamente", safe = False)
-        return JsonResponse(pedido_serializer.data())
+            return Response("El pedido se agrego correctamente",status = status.HTTP_200_OK)
+        else:
+            print(pedido_serializer.errors)
+        return Response(pedido_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     elif request.method == 'PUT':
-        pedido_data = JSONParser().parse(request)
-        pedido = Pedido.objects.get(Id = pedido_data['Id'])# capturamos el registro actual por el id
-        pedido_serializer = PedidoSerializer(pedido, data = pedido_data)
+        pedido = Pedido.objects.filter(Id = pkPedido).first() # usamos first para obtener solo 1 instancia
+        request.POST._mutable = True
+        pedido_serializer = PedidoSerializer(pedido, data=request.data)
         if pedido_serializer.is_valid():
             pedido_serializer.save()
-            return JsonResponse("Pedido actualizado correctamente", safe = False)
-        return JsonResponse("Failed to Update")
-    elif request.method == "DELETE":
-        pedido = Pedido.objects.get(Id = id)
-        pedido.delete()
-        return JsonResponse("Pedido eliminado correctamente", safe = False)
+            return Response("Articulo actualizado correctamente", status=status.HTTP_200_OK)
+        return Response("Error al actualizar el pedido", status=status.HTTP_400_BAD_REQUEST)
+
+
